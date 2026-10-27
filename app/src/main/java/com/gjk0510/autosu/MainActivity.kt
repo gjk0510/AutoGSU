@@ -17,8 +17,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,13 +72,22 @@ fun MainScreen() {
     var lastLog by remember { mutableStateOf(ExecutionLog.readLast(context)) }
     var running by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val logScrollState = rememberScrollState()
+    // 日志内容变化后自动滚到底部（默认显示最新日志）。
+    LaunchedEffect(lastLog) {
+        logScrollState.scrollTo(logScrollState.maxValue)
+    }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
         Text("AutoSU 定时任务", style = MaterialTheme.typography.titleLarge)
         Text("下次执行：${formatTime(nextTrigger)}")
 
@@ -109,6 +120,7 @@ fun MainScreen() {
                     intervalMinutes = (Settings.getIntervalMs(context) / 60_000L).toString()
                     AlarmScheduler.scheduleNext(context)
                     nextTrigger = AlarmScheduler.getNextTriggerWall(context)
+                    lastLog = ExecutionLog.readLast(context)
                 }
             ) { Text("保存并应用") }
 
@@ -140,8 +152,17 @@ fun MainScreen() {
             text = lastLog,
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(logScrollState),
             style = MaterialTheme.typography.bodySmall
         )
+        }
+    }
+}
+
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true, showSystemUi = true)
+@Composable
+fun MainScreenPreview() {
+    AutoSUTheme {
+        MainScreen()
     }
 }
