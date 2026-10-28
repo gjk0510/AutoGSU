@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -30,7 +31,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.gjk0510.autosu.ui.theme.AutoSUTheme
@@ -75,9 +79,10 @@ private fun alarmModeLabel(mode: AlarmMode): String = when (mode) {
 fun MainScreen() {
     val context = LocalContext.current.applicationContext
     var command by remember { mutableStateOf(Settings.getCommand(context)) }
-    var intervalMinutes by remember {
-        mutableStateOf((Settings.getIntervalMs(context) / 60_000L).toString())
-    }
+    val intervalMs = Settings.getIntervalMs(context)
+    var hour by remember { mutableStateOf((intervalMs / 3_600_000L).toInt().coerceIn(0, 1000000000)) }
+    var minute by remember { mutableStateOf(((intervalMs % 3_600_000L) / 60_000L).toInt()) }
+    var second by remember { mutableStateOf(((intervalMs % 60_000L) / 1000L).toInt()) }
     var nextTrigger by remember { mutableStateOf(AlarmScheduler.getNextTriggerWall(context)) }
     var lastLog by remember { mutableStateOf(ExecutionLog.readLast(context)) }
     var running by remember { mutableStateOf(false) }
@@ -136,24 +141,46 @@ fun MainScreen() {
             maxLines = 4
         )
 
-        OutlinedTextField(
-            value = intervalMinutes,
-            onValueChange = { intervalMinutes = it },
-            label = { Text("间隔时间（分钟）") },
+        Text("间隔时间", style = MaterialTheme.typography.titleSmall)
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine = true
-        )
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            NumberField(
+                value = hour,
+                onValueChange = { hour = it },
+                label = "时",
+                modifier = Modifier.weight(1f),
+                max = 1000000000
+            )
+            NumberField(
+                value = minute,
+                onValueChange = { minute = it },
+                label = "分",
+                modifier = Modifier.weight(1f),
+                max = 59
+            )
+            NumberField(
+                value = second,
+                onValueChange = { second = it },
+                label = "秒",
+                modifier = Modifier.weight(1f),
+                max = 59
+            )
+        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
                 onClick = {
                     Settings.setCommand(context, command)
-                    val minutes = intervalMinutes.toLongOrNull()?.takeIf { it > 0 }
-                        ?: (Settings.DEFAULT_INTERVAL_MS / 60_000L)
-                    Settings.setIntervalMs(context, minutes * 60_000L)
+                    val totalSeconds = hour * 3600L + minute * 60L + second
+                    val ms = if (totalSeconds <= 0L) Settings.DEFAULT_INTERVAL_MS
+                            else totalSeconds * 1000L
+                    Settings.setIntervalMs(context, ms)
                     command = Settings.getCommand(context)
-                    intervalMinutes = (Settings.getIntervalMs(context) / 60_000L).toString()
+                    hour = (ms / 3_600_000L).toInt()
+                    minute = ((ms % 3_600_000L) / 60_000L).toInt()
+                    second = ((ms % 60_000L) / 1000L).toInt()
                     AlarmScheduler.scheduleNext(context)
                     nextTrigger = AlarmScheduler.getNextTriggerWall(context)
                     lastLog = ExecutionLog.readLast(context)
@@ -213,4 +240,59 @@ fun MainScreenPreview() {
     AutoSUTheme {
         MainScreen()
     }
+}
+
+/** 数字输入框：输入即生效；删空可显示为空，失焦或回车时空值自动填 0；只允许数字，越界自动钳制到 [min, max]。 */
+@Composable
+private fun NumberField(
+    value: Int,
+    onValueChange: (Int) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    min: Int = 0,
+    max: Int = 999
+) {
+    var text by remember { mutableStateOf(value.toString()) }
+    val focusManager = LocalFocusManager.current
+
+    // 空值时归 0（min）。
+    fun fillIfEmpty() {
+        if (text.isEmpty()) {
+            text = min.toString()
+            if (min != value) onValueChange(min)
+        }
+    }
+
+    // 外部 value 变化（如保存后回写）时同步显示。
+    LaunchedEffect(value) {
+        text = value.toString()
+    }
+
+    OutlinedTextField(
+        value = text,
+        onValueChange = { raw ->
+            val digits = raw.filter { it.isDigit() }
+            text = digits
+            digits.toIntOrNull()?.let { num ->
+                val clamped = num.coerceIn(min, max)
+                if (clamped != value) onValueChange(clamped)
+                if (digits != clamped.toString()) text = clamped.toString()
+            }
+        },
+        label = { Text(label) },
+        modifier = modifier.onFocusChanged { focus ->
+            if (!focus.isFocused) fillIfEmpty()
+        },
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Number,
+            imeAction = ImeAction.Done
+        ),
+        keyboardActions = KeyboardActions(
+            onDone = {
+                fillIfEmpty()
+                focusManager.clearFocus()
+            }
+        ),
+        singleLine = true
+    )
 }
