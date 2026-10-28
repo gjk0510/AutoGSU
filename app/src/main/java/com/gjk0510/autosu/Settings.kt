@@ -2,6 +2,19 @@ package com.gjk0510.autosu
 
 import android.content.Context
 
+/** 闹钟模式：关闭 / 三种闹钟类型（非精确 / 精确 / 闹钟）。 */
+enum class AlarmMode {
+    OFF,
+    INEXACT,
+    EXACT,
+    ALARM_CLOCK;
+
+    companion object {
+        fun fromName(name: String?): AlarmMode =
+            values().firstOrNull { it.name == name } ?: INEXACT
+    }
+}
+
 /**
  * 应用设置：命令与调度间隔可持久化，供 App 内修改。
  */
@@ -9,6 +22,8 @@ object Settings {
     const val PREFS_NAME = "autosu_prefs"
     private const val KEY_COMMAND = "command"
     private const val KEY_INTERVAL_MS = "interval_ms"
+    private const val KEY_ALARM_MODE = "alarm_mode"
+    private const val KEY_ENABLED = "enabled" // 旧版开关，仅用于读取迁移
 
     /** 默认命令（占位），用户可在 App 内自行填写。 */
     const val DEFAULT_COMMAND = "echo AutoSU_$(date +%s)"
@@ -34,6 +49,22 @@ object Settings {
 
     fun setIntervalMs(context: Context, intervalMs: Long) {
         prefs(context).edit().putLong(KEY_INTERVAL_MS, intervalMs).apply()
+    }
+
+    /** 功能是否启用（模式非 OFF）。 */
+    fun isEnabled(context: Context): Boolean =
+        getAlarmMode(context) != AlarmMode.OFF
+
+    fun getAlarmMode(context: Context): AlarmMode {
+        val p = prefs(context)
+        val name = p.getString(KEY_ALARM_MODE, null)
+        if (name != null) return AlarmMode.fromName(name)
+        // 旧版 boolean 开关迁移：关闭 → OFF，否则默认非精确。
+        return if (p.getBoolean(KEY_ENABLED, true)) AlarmMode.INEXACT else AlarmMode.OFF
+    }
+
+    fun setAlarmMode(context: Context, mode: AlarmMode) {
+        prefs(context).edit().putString(KEY_ALARM_MODE, mode.name).apply()
     }
 
     private fun prefs(context: Context) =

@@ -5,6 +5,10 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 命令执行期间短时间保持 CPU 唤醒（有硬超时，及时释放） -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 引导用户将应用加入电池优化白名单（配合自启动，保证 Doze/后台能唤醒） -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 精确闹钟（setExactAndAllowWhileIdle）：Android 12+ 需用户在系统设置授予「闹钟和提醒」 -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application
         android:allowBackup="true"

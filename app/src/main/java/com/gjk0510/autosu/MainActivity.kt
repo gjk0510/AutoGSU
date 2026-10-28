@@ -17,6 +17,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -61,6 +64,13 @@ private fun formatTime(millis: Long): String {
     )
 }
 
+private fun alarmModeLabel(mode: AlarmMode): String = when (mode) {
+    AlarmMode.OFF -> "关闭"
+    AlarmMode.INEXACT -> "非精确"
+    AlarmMode.EXACT -> "精确"
+    AlarmMode.ALARM_CLOCK -> "闹钟"
+}
+
 @Composable
 fun MainScreen() {
     val context = LocalContext.current.applicationContext
@@ -71,6 +81,7 @@ fun MainScreen() {
     var nextTrigger by remember { mutableStateOf(AlarmScheduler.getNextTriggerWall(context)) }
     var lastLog by remember { mutableStateOf(ExecutionLog.readLast(context)) }
     var running by remember { mutableStateOf(false) }
+    var alarmMode by remember { mutableStateOf(Settings.getAlarmMode(context)) }
     val scope = rememberCoroutineScope()
     val logScrollState = rememberScrollState()
     // 日志内容变化后自动滚到底部（默认显示最新日志）。
@@ -90,6 +101,31 @@ fun MainScreen() {
         ) {
         Text("AutoSU 定时任务", style = MaterialTheme.typography.titleLarge)
         Text("下次执行：${formatTime(nextTrigger)}")
+
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            AlarmMode.values().forEachIndexed { index, mode ->
+                SegmentedButton(
+                    selected = alarmMode == mode,
+                    onClick = {
+                        alarmMode = mode
+                        Settings.setAlarmMode(context, mode)
+                        if (mode == AlarmMode.OFF) {
+                            AlarmScheduler.cancel(context)
+                        } else {
+                            AlarmScheduler.scheduleNext(context)
+                        }
+                        nextTrigger = AlarmScheduler.getNextTriggerWall(context)
+                        lastLog = ExecutionLog.readLast(context)
+                    },
+                    shape = SegmentedButtonDefaults.itemShape(
+                        index = index,
+                        count = AlarmMode.values().size
+                    )
+                ) {
+                    Text(alarmModeLabel(mode))
+                }
+            }
+        }
 
         OutlinedTextField(
             value = command,
@@ -145,6 +181,18 @@ fun MainScreen() {
                 enabled = !running
             ) { Text(if (running) "执行中..." else "立即执行一次") }
         }
+
+        /* 后台保活引导按钮（暂时关闭，后续需要可恢复）
+        Text("后台保活（推荐开启）", style = MaterialTheme.typography.titleSmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(onClick = { WhitelistGuide.requestIgnoreBatteryOptimizations(context) }) {
+                Text("忽略电池优化")
+            }
+            Button(onClick = { WhitelistGuide.openAutostartSettings(context) }) {
+                Text("打开自启动设置")
+            }
+        }
+        */
 
         HorizontalDivider()
 
