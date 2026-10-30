@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.AutoSU" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.AutoSU" parent="android:Theme.Material.NoActionBar">
+        <!-- 与 Compose 深色背景保持一致，避免 edge-to-edge 下露出白色窗口背景 -->
+        <item name="android:windowBackground">@color/autosu_window_background</item>
+    </style>
 </resources>

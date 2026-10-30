@@ -1,11 +1,18 @@
 package com.gjk0510.autosu
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -21,6 +29,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -72,9 +81,21 @@ fun AppRoot() {
     val context = LocalContext.current.applicationContext
     var editingTaskId by rememberSaveable { mutableStateOf<String?>(null) }
 
-    Crossfade(
+    AnimatedContent(
         targetState = editingTaskId,
-        animationSpec = tween(200),
+        transitionSpec = {
+            if (targetState != null) {
+                // 进入详情页：详情从右滑入（纯位移、全程不透明），主页保持静止，避免透明度合成造成掉帧
+                slideInHorizontally(
+                    animationSpec = tween(240, easing = FastOutSlowInEasing)
+                ) { it } togetherWith fadeOut(targetAlpha = 1f)
+            } else {
+                // 返回主页：详情向右滑出（纯位移、全程不透明），主页保持静止
+                fadeIn(initialAlpha = 1f) togetherWith slideOutHorizontally(
+                    animationSpec = tween(240, easing = FastOutSlowInEasing)
+                ) { it }
+            }
+        },
         label = "home-detail"
     ) { taskId ->
         if (taskId == null) {
@@ -99,6 +120,7 @@ fun AppRoot() {
 @Composable
 fun TaskDetailScreen(taskId: String, onBack: () -> Unit) {
     val context = LocalContext.current.applicationContext
+    val activityContext = LocalContext.current
     BackHandler(onBack = onBack)
     val initial = remember(taskId) { TaskStore.get(context, taskId) }
 
@@ -114,10 +136,15 @@ fun TaskDetailScreen(taskId: String, onBack: () -> Unit) {
     var minute by remember(taskId) { mutableStateOf(((initial.intervalMs % 3_600_000L) / 60_000L).toInt()) }
     var second by remember(taskId) { mutableStateOf(((initial.intervalMs % 60_000L) / 1000L).toInt()) }
     var nextTrigger by remember { mutableStateOf(AlarmScheduler.getNextTriggerWall(context, taskId)) }
-    var lastLog by remember { mutableStateOf(ExecutionLog.readLastTask(context, taskId)) }
+    var lastLog by remember { mutableStateOf("") }
     var running by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val logScrollState = rememberScrollState()
+
+    // 后台读取最近日志，避免打开详情页时在主线程读文件阻塞转场动画。
+    LaunchedEffect(taskId) {
+        lastLog = withContext(Dispatchers.IO) { ExecutionLog.readLastTask(context, taskId) }
+    }
 
     // 日志内容变化后自动滚到底部（默认显示最新日志）。
     LaunchedEffect(lastLog) {
@@ -161,6 +188,7 @@ fun TaskDetailScreen(taskId: String, onBack: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -276,6 +304,27 @@ fun TaskDetailScreen(taskId: String, onBack: () -> Unit) {
             }
 
             HorizontalDivider()
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        val text = ExecutionLog.readAllTask(context, taskId)
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, "AutoSU 日志 - ${initial.name}")
+                            putExtra(Intent.EXTRA_TEXT, text)
+                        }
+                        activityContext.startActivity(Intent.createChooser(send, "导出日志"))
+                    }
+                ) { Text("导出日志") }
+
+                OutlinedButton(
+                    onClick = {
+                        ExecutionLog.clearTask(context, taskId)
+                        lastLog = ExecutionLog.readLastTask(context, taskId)
+                    }
+                ) { Text("清除日志") }
+            }
 
             Text(
                 text = lastLog,
