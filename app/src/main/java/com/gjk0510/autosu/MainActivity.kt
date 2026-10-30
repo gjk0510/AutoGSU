@@ -8,9 +8,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -90,10 +91,11 @@ fun AppRoot() {
     NavHost(
         navController = navController,
         startDestination = "home",
-        // 主页在双向转场中都保持原地不动，只有详情页一个画面在动
+        // 主页在两端的转场中只做快速淡出/淡入，模拟 GBLogger 默认 Activity 转场里
+        // 旧页面轻微淡出的效果；详情页单独声明淡入 + 轻微上滑。
         enterTransition = { EnterTransition.None },
-        exitTransition = { ExitTransition.None },
-        popEnterTransition = { EnterTransition.None },
+        exitTransition = { fadeOut(animationSpec = tween(220)) },
+        popEnterTransition = { fadeIn(animationSpec = tween(220)) },
         popExitTransition = { ExitTransition.None }
     ) {
         composable("home") {
@@ -109,17 +111,16 @@ fun AppRoot() {
         composable(
             route = "detail/{taskId}",
             arguments = listOf(navArgument("taskId") { type = NavType.StringType }),
-            // 与 SimpleHook nav graph 的 slide_in_right / slide_out_right 同款转场：
-            // 纯位移、全程不透明，GPU 只做平移合成
+            // 对齐 GBLogger 点“设置”后默认 Activity 的打开/关闭手感：
+            // 快速淡入 + 轻微上滑进入；返回时淡出 + 轻微下滑。
+            // 全程只做 alpha 与轻微位移合成，比整页横移更轻、更跟手，不卡顿。
             enterTransition = {
-                slideInHorizontally(
-                    animationSpec = tween(400, easing = FastOutSlowInEasing)
-                ) { it }
+                fadeIn(animationSpec = tween(220)) +
+                    slideInVertically(animationSpec = tween(220)) { height -> height / 12 }
             },
             popExitTransition = {
-                slideOutHorizontally(
-                    animationSpec = tween(400, easing = FastOutSlowInEasing)
-                ) { it }
+                fadeOut(animationSpec = tween(220)) +
+                    slideOutVertically(animationSpec = tween(220)) { height -> height / 12 }
             }
         ) { entry ->
             val taskId = entry.arguments?.getString("taskId")
