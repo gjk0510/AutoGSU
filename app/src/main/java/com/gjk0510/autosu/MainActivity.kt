@@ -1,5 +1,7 @@
 package com.gjk0510.autosu
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -8,14 +10,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
@@ -23,6 +30,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,13 +38,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.gjk0510.autosu.ui.theme.AutoSUTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -87,11 +98,42 @@ fun MainScreen() {
     var lastLog by remember { mutableStateOf(ExecutionLog.readLast(context)) }
     var running by remember { mutableStateOf(false) }
     var alarmMode by remember { mutableStateOf(Settings.getAlarmMode(context)) }
+    var showAbout by remember { mutableStateOf(false) }
+    val activity = LocalContext.current
     val scope = rememberCoroutineScope()
     val logScrollState = rememberScrollState()
     // 日志内容变化后自动滚到底部（默认显示最新日志）。
     LaunchedEffect(lastLog) {
         logScrollState.scrollTo(logScrollState.maxValue)
+    }
+
+    if (showAbout) {
+        AlertDialog(
+            onDismissRequest = { showAbout = false },
+            title = { Text("关于 AutoGSU") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("有问题邮件联系作者：")
+                    Text(
+                        text = "gjk0510@hotmail.com",
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable {
+                            activity.startActivity(
+                                Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:gjk0510@hotmail.com"))
+                            )
+                        }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "构建时间：${BuildConfig.BUILD_TIME}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAbout = false }) { Text("关闭") }
+            }
+        )
     }
 
     Surface(
@@ -104,7 +146,16 @@ fun MainScreen() {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-        Text("AutoSU 定时任务", style = MaterialTheme.typography.titleLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("AutoGSU 定时任务", style = MaterialTheme.typography.titleLarge)
+            IconButton(onClick = { showAbout = true }) {
+                Text("!", fontWeight = FontWeight.Bold, fontSize = 22.sp)
+            }
+        }
         Text("下次执行：${formatTime(nextTrigger)}")
 
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
