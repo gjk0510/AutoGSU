@@ -16,10 +16,11 @@ enum class AlarmMode {
 }
 
 /**
- * 应用设置：命令与调度间隔可持久化，供 App 内修改。
+ * 全局设置：仅保留常量与旧版单命令配置的读取（用于升级迁移）。
  */
 object Settings {
     const val PREFS_NAME = "autosu_prefs"
+
     private const val KEY_COMMAND = "command"
     private const val KEY_INTERVAL_MS = "interval_ms"
     private const val KEY_ALARM_MODE = "alarm_mode"
@@ -40,20 +41,8 @@ object Settings {
     fun getCommand(context: Context): String =
         prefs(context).getString(KEY_COMMAND, DEFAULT_COMMAND) ?: DEFAULT_COMMAND
 
-    fun setCommand(context: Context, command: String) {
-        prefs(context).edit().putString(KEY_COMMAND, command.trim()).apply()
-    }
-
     fun getIntervalMs(context: Context): Long =
         prefs(context).getLong(KEY_INTERVAL_MS, DEFAULT_INTERVAL_MS)
-
-    fun setIntervalMs(context: Context, intervalMs: Long) {
-        prefs(context).edit().putLong(KEY_INTERVAL_MS, intervalMs).apply()
-    }
-
-    /** 功能是否启用（模式非 OFF）。 */
-    fun isEnabled(context: Context): Boolean =
-        getAlarmMode(context) != AlarmMode.OFF
 
     fun getAlarmMode(context: Context): AlarmMode {
         val p = prefs(context)
@@ -63,8 +52,11 @@ object Settings {
         return if (p.getBoolean(KEY_ENABLED, true)) AlarmMode.INEXACT else AlarmMode.OFF
     }
 
-    fun setAlarmMode(context: Context, mode: AlarmMode) {
-        prefs(context).edit().putString(KEY_ALARM_MODE, mode.name).apply()
+    /** 是否保存过旧版单命令配置（决定是否需要迁移）。 */
+    fun hasLegacyConfig(context: Context): Boolean {
+        val p = prefs(context)
+        return p.contains(KEY_COMMAND) || p.contains(KEY_INTERVAL_MS) ||
+            p.contains(KEY_ALARM_MODE) || p.contains(KEY_ENABLED)
     }
 
     private fun prefs(context: Context) =

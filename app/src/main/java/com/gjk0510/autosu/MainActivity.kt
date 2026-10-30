@@ -1,25 +1,22 @@
 package com.gjk0510.autosu
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
@@ -37,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,77 +61,97 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             AutoSUTheme {
-                MainScreen()
+                AppRoot()
             }
         }
     }
 }
 
-private val TIME_FORMATTER: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-
-private fun formatTime(millis: Long): String {
-    if (millis <= 0L) return "未设置"
-    return TIME_FORMATTER.format(
-        Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault())
-    )
-}
-
-private fun alarmModeLabel(mode: AlarmMode): String = when (mode) {
-    AlarmMode.OFF -> "关闭"
-    AlarmMode.INEXACT -> "非精确"
-    AlarmMode.EXACT -> "精确"
-    AlarmMode.ALARM_CLOCK -> "闹钟"
-}
-
 @Composable
-fun MainScreen() {
+fun AppRoot() {
     val context = LocalContext.current.applicationContext
-    var command by remember { mutableStateOf(Settings.getCommand(context)) }
-    val intervalMs = Settings.getIntervalMs(context)
-    var hour by remember { mutableStateOf((intervalMs / 3_600_000L).toInt().coerceIn(0, 1000000000)) }
-    var minute by remember { mutableStateOf(((intervalMs % 3_600_000L) / 60_000L).toInt()) }
-    var second by remember { mutableStateOf(((intervalMs % 60_000L) / 1000L).toInt()) }
-    var nextTrigger by remember { mutableStateOf(AlarmScheduler.getNextTriggerWall(context)) }
-    var lastLog by remember { mutableStateOf(ExecutionLog.readLast(context)) }
+    var editingTaskId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    Crossfade(
+        targetState = editingTaskId,
+        animationSpec = tween(200),
+        label = "home-detail"
+    ) { taskId ->
+        if (taskId == null) {
+            HomeScreen(
+                onOpen = { editingTaskId = it },
+                onAdd = {
+                    val task = Task.new()
+                    TaskStore.save(context, task)
+                    editingTaskId = task.id
+                }
+            )
+        } else {
+            TaskDetailScreen(
+                taskId = taskId,
+                onBack = { editingTaskId = null }
+            )
+        }
+    }
+}
+
+/** 任务详情页：即原来的单命令编辑页面，改为针对单个任务。 */
+@Composable
+fun TaskDetailScreen(taskId: String, onBack: () -> Unit) {
+    val context = LocalContext.current.applicationContext
+    BackHandler(onBack = onBack)
+    val initial = remember(taskId) { TaskStore.get(context, taskId) }
+
+    if (initial == null) {
+        LaunchedEffect(Unit) { onBack() }
+        return
+    }
+
+    var name by remember(taskId) { mutableStateOf(initial.name) }
+    var command by remember(taskId) { mutableStateOf(initial.command) }
+    var alarmMode by remember(taskId) { mutableStateOf(initial.alarmMode) }
+    var hour by remember(taskId) { mutableStateOf((initial.intervalMs / 3_600_000L).toInt()) }
+    var minute by remember(taskId) { mutableStateOf(((initial.intervalMs % 3_600_000L) / 60_000L).toInt()) }
+    var second by remember(taskId) { mutableStateOf(((initial.intervalMs % 60_000L) / 1000L).toInt()) }
+    var nextTrigger by remember { mutableStateOf(AlarmScheduler.getNextTriggerWall(context, taskId)) }
+    var lastLog by remember { mutableStateOf(ExecutionLog.readLastTask(context, taskId)) }
     var running by remember { mutableStateOf(false) }
-    var alarmMode by remember { mutableStateOf(Settings.getAlarmMode(context)) }
-    var showAbout by remember { mutableStateOf(false) }
-    val activity = LocalContext.current
     val scope = rememberCoroutineScope()
     val logScrollState = rememberScrollState()
+
     // 日志内容变化后自动滚到底部（默认显示最新日志）。
     LaunchedEffect(lastLog) {
         logScrollState.scrollTo(logScrollState.maxValue)
     }
 
-    if (showAbout) {
-        AlertDialog(
-            onDismissRequest = { showAbout = false },
-            title = { Text("关于 AutoGSU") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("有问题邮件联系作者：")
-                    Text(
-                        text = "gjk0510@hotmail.com",
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable {
-                            activity.startActivity(
-                                Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:gjk0510@hotmail.com"))
-                            )
-                        }
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = "构建时间：${BuildConfig.BUILD_TIME}",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showAbout = false }) { Text("关闭") }
-            }
-        )
+    fun buildTask(ms: Long): Task = Task(
+        id = initial.id,
+        name = name.trim().ifBlank { "任务" },
+        command = command.trim(),
+        intervalMs = ms,
+        alarmMode = alarmMode,
+        createdAt = initial.createdAt
+    )
+
+    fun save() {
+        val totalSeconds = hour * 3600L + minute * 60L + second
+        val ms = if (totalSeconds <= 0L) Settings.DEFAULT_INTERVAL_MS
+                else totalSeconds * 1000L
+        val updated = buildTask(ms)
+        TaskStore.save(context, updated)
+        hour = (ms / 3_600_000L).toInt()
+        minute = ((ms % 3_600_000L) / 60_000L).toInt()
+        second = ((ms % 60_000L) / 1000L).toInt()
+        AlarmScheduler.schedule(context, updated)
+        nextTrigger = AlarmScheduler.getNextTriggerWall(context, taskId)
+        lastLog = ExecutionLog.readLastTask(context, taskId)
+    }
+
+    fun delete() {
+        TaskStore.delete(context, taskId)
+        AlarmScheduler.cancel(context, taskId)
+        ExecutionLog.clearTask(context, taskId)
+        onBack()
     }
 
     Surface(
@@ -146,151 +164,157 @@ fun MainScreen() {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("AutoGSU 定时任务", style = MaterialTheme.typography.titleLarge)
-            IconButton(onClick = { showAbout = true }) {
-                Text("!", fontWeight = FontWeight.Bold, fontSize = 22.sp)
-            }
-        }
-        Text("下次执行：${formatTime(nextTrigger)}")
-
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            AlarmMode.values().forEachIndexed { index, mode ->
-                SegmentedButton(
-                    selected = alarmMode == mode,
-                    onClick = {
-                        alarmMode = mode
-                        Settings.setAlarmMode(context, mode)
-                        if (mode == AlarmMode.OFF) {
-                            AlarmScheduler.cancel(context)
-                        } else {
-                            AlarmScheduler.scheduleNext(context)
-                        }
-                        nextTrigger = AlarmScheduler.getNextTriggerWall(context)
-                        lastLog = ExecutionLog.readLast(context)
-                    },
-                    shape = SegmentedButtonDefaults.itemShape(
-                        index = index,
-                        count = AlarmMode.values().size
-                    )
-                ) {
-                    Text(alarmModeLabel(mode))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Text("←", fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                }
+                Text(
+                    "任务详情",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = { delete() }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
                 }
             }
-        }
 
-        OutlinedTextField(
-            value = command,
-            onValueChange = { command = it },
-            label = { Text("Shell 命令（通过 su -c 执行）") },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 1,
-            maxLines = 4
-        )
-
-        Text("间隔时间", style = MaterialTheme.typography.titleSmall)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            NumberField(
-                value = hour,
-                onValueChange = { hour = it },
-                label = "时",
-                modifier = Modifier.weight(1f),
-                max = 1000000000
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("名称") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
             )
-            NumberField(
-                value = minute,
-                onValueChange = { minute = it },
-                label = "分",
-                modifier = Modifier.weight(1f),
-                max = 59
-            )
-            NumberField(
-                value = second,
-                onValueChange = { second = it },
-                label = "秒",
-                modifier = Modifier.weight(1f),
-                max = 59
-            )
-        }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                onClick = {
-                    Settings.setCommand(context, command)
-                    val totalSeconds = hour * 3600L + minute * 60L + second
-                    val ms = if (totalSeconds <= 0L) Settings.DEFAULT_INTERVAL_MS
-                            else totalSeconds * 1000L
-                    Settings.setIntervalMs(context, ms)
-                    command = Settings.getCommand(context)
-                    hour = (ms / 3_600_000L).toInt()
-                    minute = ((ms % 3_600_000L) / 60_000L).toInt()
-                    second = ((ms % 60_000L) / 1000L).toInt()
-                    AlarmScheduler.scheduleNext(context)
-                    nextTrigger = AlarmScheduler.getNextTriggerWall(context)
-                    lastLog = ExecutionLog.readLast(context)
-                }
-            ) { Text("保存并应用") }
-
-            Button(
-                onClick = {
-                    running = true
-                    scope.launch {
-                        val result = withContext(Dispatchers.IO) {
-                            CommandExecutor.execute(Settings.getCommand(context))
-                        }
-                        withContext(Dispatchers.IO) {
-                            ExecutionLog.append(context, result.summary())
-                            if (result.output.isNotBlank()) {
-                                ExecutionLog.append(context, "输出：${result.output.trim()}")
-                            }
-                        }
-                        nextTrigger = AlarmScheduler.getNextTriggerWall(context)
-                        lastLog = ExecutionLog.readLast(context)
-                        running = false
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                AlarmMode.values().forEachIndexed { index, mode ->
+                    SegmentedButton(
+                        selected = alarmMode == mode,
+                        onClick = {
+                            alarmMode = mode
+                            val updated = buildTask(initial.intervalMs)
+                            TaskStore.save(context, updated)
+                            AlarmScheduler.schedule(context, updated)
+                            nextTrigger = AlarmScheduler.getNextTriggerWall(context, taskId)
+                            lastLog = ExecutionLog.readLastTask(context, taskId)
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(
+                            index = index,
+                            count = AlarmMode.values().size
+                        )
+                    ) {
+                        Text(alarmModeLabel(mode))
                     }
-                },
-                enabled = !running
-            ) { Text(if (running) "执行中..." else "立即执行一次") }
-        }
-
-        /* 后台保活引导按钮（暂时关闭，后续需要可恢复）
-        Text("后台保活（推荐开启）", style = MaterialTheme.typography.titleSmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = { WhitelistGuide.requestIgnoreBatteryOptimizations(context) }) {
-                Text("忽略电池优化")
+                }
             }
-            Button(onClick = { WhitelistGuide.openAutostartSettings(context) }) {
-                Text("打开自启动设置")
+
+            OutlinedTextField(
+                value = command,
+                onValueChange = { command = it },
+                label = { Text("Shell 命令（通过 su -c 执行）") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 1,
+                maxLines = 4
+            )
+
+            Text("间隔时间", style = MaterialTheme.typography.titleSmall)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                NumberField(
+                    value = hour,
+                    onValueChange = { hour = it },
+                    label = "时",
+                    modifier = Modifier.weight(1f),
+                    max = 1000000000
+                )
+                NumberField(
+                    value = minute,
+                    onValueChange = { minute = it },
+                    label = "分",
+                    modifier = Modifier.weight(1f),
+                    max = 59
+                )
+                NumberField(
+                    value = second,
+                    onValueChange = { second = it },
+                    label = "秒",
+                    modifier = Modifier.weight(1f),
+                    max = 59
+                )
             }
-        }
-        */
 
-        HorizontalDivider()
+            Text("下次执行：${formatTime(nextTrigger)}")
 
-        Text(
-            text = lastLog,
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(logScrollState),
-            style = MaterialTheme.typography.bodySmall
-        )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = { save() }) { Text("保存并应用") }
+
+                Button(
+                    onClick = {
+                        running = true
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                CommandExecutor.execute(command)
+                            }
+                            withContext(Dispatchers.IO) {
+                                ExecutionLog.appendTask(context, taskId, result.summary())
+                                if (result.output.isNotBlank()) {
+                                    ExecutionLog.appendTask(context, taskId, "输出：${result.output.trim()}")
+                                }
+                            }
+                            nextTrigger = AlarmScheduler.getNextTriggerWall(context, taskId)
+                            lastLog = ExecutionLog.readLastTask(context, taskId)
+                            running = false
+                        }
+                    },
+                    enabled = !running
+                ) { Text(if (running) "执行中..." else "立即执行一次") }
+            }
+
+            HorizontalDivider()
+
+            Text(
+                text = lastLog,
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(logScrollState),
+                style = MaterialTheme.typography.bodySmall
+            )
         }
     }
 }
 
-@androidx.compose.ui.tooling.preview.Preview(showBackground = true, showSystemUi = true)
-@Composable
-fun MainScreenPreview() {
-    AutoSUTheme {
-        MainScreen()
+private val TIME_FORMATTER: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+
+internal fun formatTime(millis: Long): String {
+    if (millis <= 0L) return "未设置"
+    return TIME_FORMATTER.format(
+        Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault())
+    )
+}
+
+internal fun formatInterval(ms: Long): String {
+    val total = if (ms <= 0L) Settings.DEFAULT_INTERVAL_MS else ms
+    val h = total / 3_600_000L
+    val m = (total % 3_600_000L) / 60_000L
+    val s = (total % 60_000L) / 1000L
+    return when {
+        h > 0 -> "${h}小时 ${m}分 ${s}秒"
+        m > 0 -> "${m}分 ${s}秒"
+        else -> "${s}秒"
     }
+}
+
+internal fun alarmModeLabel(mode: AlarmMode): String = when (mode) {
+    AlarmMode.OFF -> "关闭"
+    AlarmMode.INEXACT -> "非精确"
+    AlarmMode.EXACT -> "精确"
+    AlarmMode.ALARM_CLOCK -> "闹钟"
 }
 
 /** 数字输入框：输入即生效；删空可显示为空，失焦或回车时空值自动填 0；只允许数字，越界自动钳制到 [min, max]。 */
