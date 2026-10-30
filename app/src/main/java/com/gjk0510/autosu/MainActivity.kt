@@ -6,12 +6,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
@@ -43,7 +41,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,8 +52,14 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.gjk0510.autosu.ui.theme.AutoSUTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -79,39 +82,50 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppRoot() {
     val context = LocalContext.current.applicationContext
-    var editingTaskId by rememberSaveable { mutableStateOf<String?>(null) }
+    val navController = rememberNavController()
 
-    AnimatedContent(
-        targetState = editingTaskId,
-        transitionSpec = {
-            if (targetState != null) {
-                // 进入详情页：详情从右滑入（纯位移、全程不透明），主页保持静止，避免透明度合成造成掉帧
-                slideInHorizontally(
-                    animationSpec = tween(240, easing = FastOutSlowInEasing)
-                ) { it } togetherWith fadeOut(targetAlpha = 1f)
-            } else {
-                // 返回主页：详情向右滑出（纯位移、全程不透明），主页保持静止
-                fadeIn(initialAlpha = 1f) togetherWith slideOutHorizontally(
-                    animationSpec = tween(240, easing = FastOutSlowInEasing)
-                ) { it }
-            }
-        },
-        label = "home-detail"
-    ) { taskId ->
-        if (taskId == null) {
+    // 参考开源应用（SimpleHook / Now in Android）的 Navigation 架构：
+    // 页面由导航框架管理，转场在路由上统一声明；转场结束后被覆盖的页面
+    // 会被移出组合树，不再像 AnimatedContent 那样两个整页常驻互相拖累。
+    NavHost(
+        navController = navController,
+        startDestination = "home",
+        // 主页在双向转场中都保持原地不动，只有详情页一个画面在动
+        enterTransition = { EnterTransition.None },
+        exitTransition = { ExitTransition.None },
+        popEnterTransition = { EnterTransition.None },
+        popExitTransition = { ExitTransition.None }
+    ) {
+        composable("home") {
             HomeScreen(
-                onOpen = { editingTaskId = it },
+                onOpen = { id -> navController.navigate("detail/$id") },
                 onAdd = {
                     val task = Task.new()
                     TaskStore.save(context, task)
-                    editingTaskId = task.id
+                    navController.navigate("detail/${task.id}")
                 }
             )
-        } else {
-            TaskDetailScreen(
-                taskId = taskId,
-                onBack = { editingTaskId = null }
-            )
+        }
+        composable(
+            route = "detail/{taskId}",
+            arguments = listOf(navArgument("taskId") { type = NavType.StringType }),
+            // 与 SimpleHook nav graph 的 slide_in_right / slide_out_right 同款转场：
+            // 纯位移、全程不透明，GPU 只做平移合成
+            enterTransition = {
+                slideInHorizontally(
+                    animationSpec = tween(400, easing = FastOutSlowInEasing)
+                ) { it }
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    animationSpec = tween(400, easing = FastOutSlowInEasing)
+                ) { it }
+            }
+        ) { entry ->
+            val taskId = entry.arguments?.getString("taskId")
+            if (taskId != null) {
+                TaskDetailScreen(taskId = taskId, onBack = { navController.popBackStack() })
+            }
         }
     }
 }
@@ -138,11 +152,15 @@ fun TaskDetailScreen(taskId: String, onBack: () -> Unit) {
     var nextTrigger by remember { mutableStateOf(AlarmScheduler.getNextTriggerWall(context, taskId)) }
     var lastLog by remember { mutableStateOf("") }
     var running by remember { mutableStateOf(false) }
+    // 删除按钮三步确认：删除 → 确认删除 → 再点一次删除 → 执行
+    var deleteStage by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
     val logScrollState = rememberScrollState()
 
-    // 后台读取最近日志，避免打开详情页时在主线程读文件阻塞转场动画。
+    // 后台读取最近日志；等滑入转场（400ms）结束后再填充，
+    // 避免大段日志文本的排版重排正好撞在动画中途造成掉帧。
     LaunchedEffect(taskId) {
+        delay(450)
         lastLog = withContext(Dispatchers.IO) { ExecutionLog.readLastTask(context, taskId) }
     }
 
@@ -204,8 +222,20 @@ fun TaskDetailScreen(taskId: String, onBack: () -> Unit) {
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.weight(1f)
                 )
-                TextButton(onClick = { delete() }) {
-                    Text("删除", color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = {
+                    deleteStage += 1
+                    if (deleteStage >= 3) delete()
+                }) {
+                    Text(
+                        text = when (deleteStage) {
+                            1 -> "确认删除"
+                            2 -> "再点一次删除"
+                            else -> "删除"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
 
