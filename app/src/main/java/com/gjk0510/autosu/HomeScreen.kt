@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,12 +49,13 @@ import kotlinx.coroutines.withContext
 private data class CardExtras(val nextWall: Long, val lastLog: String)
 
 @Composable
-fun HomeScreen(onOpen: (String) -> Unit, onAdd: () -> Unit) {
+fun HomeScreen(onOpen: (String) -> Unit, onAdd: (TriggerType) -> Unit) {
     val context = LocalContext.current.applicationContext
     val activity = LocalContext.current
     var tasks by remember { mutableStateOf(TaskStore.getAll(context)) }
     var extras by remember { mutableStateOf<Map<String, CardExtras>>(emptyMap()) }
     var showAbout by remember { mutableStateOf(false) }
+    var showAddMenu by remember { mutableStateOf(false) }
 
     // 卡片概要统一在后台线程加载，不在组合过程中读磁盘（掉帧根源）。
     LaunchedEffect(tasks) {
@@ -160,14 +163,31 @@ fun HomeScreen(onOpen: (String) -> Unit, onAdd: () -> Unit) {
             }
         }
 
-        FloatingActionButton(
-            onClick = onAdd,
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(20.dp)
-                .size(72.dp)
         ) {
-            Text("+", fontSize = 32.sp, fontWeight = FontWeight.Normal)
+            FloatingActionButton(
+                onClick = { showAddMenu = true },
+                modifier = Modifier.size(72.dp)
+            ) {
+                Text("+", fontSize = 32.sp, fontWeight = FontWeight.Normal)
+            }
+            DropdownMenu(
+                expanded = showAddMenu,
+                onDismissRequest = { showAddMenu = false }
+            ) {
+                TriggerType.values().forEach { type ->
+                    DropdownMenuItem(
+                        text = { Text("${triggerTypeLabel(type)}执行") },
+                        onClick = {
+                            showAddMenu = false
+                            onAdd(type)
+                        }
+                    )
+                }
+            }
         }
     }
 }
@@ -226,16 +246,19 @@ private fun TaskCard(
             )
 
             Text(
-                text = "间隔：${formatInterval(task.intervalMs)}",
+                text = "类型：${triggerTypeLabel(task.trigger)} · " +
+                    if (task.trigger == TriggerType.SCHEDULE)
+                        alarmModeLabel(task.alarmMode)
+                    else if (task.enabled) "已启用" else "已停用",
                 style = MaterialTheme.typography.bodySmall
             )
 
-            if (nextWall != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = "模式：${alarmModeLabel(task.alarmMode)}",
-                        style = MaterialTheme.typography.bodySmall
-                    )
+            if (task.trigger == TriggerType.SCHEDULE) {
+                Text(
+                    text = "间隔：${formatInterval(task.intervalMs)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (nextWall != null) {
                     Text(
                         text = "下次：${formatTime(nextWall)}",
                         style = MaterialTheme.typography.bodySmall

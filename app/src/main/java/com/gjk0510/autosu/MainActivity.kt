@@ -34,6 +34,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -101,8 +102,8 @@ fun AppRoot() {
         composable("home") {
             HomeScreen(
                 onOpen = { id -> navController.navigate("detail/$id") },
-                onAdd = {
-                    val task = Task.new()
+                onAdd = { trigger ->
+                    val task = Task.new(trigger)
                     TaskStore.save(context, task)
                     navController.navigate("detail/${task.id}")
                 }
@@ -147,6 +148,7 @@ fun TaskDetailScreen(taskId: String, onBack: () -> Unit) {
     var name by remember(taskId) { mutableStateOf(initial.name) }
     var command by remember(taskId) { mutableStateOf(initial.command) }
     var alarmMode by remember(taskId) { mutableStateOf(initial.alarmMode) }
+    var enabled by remember(taskId) { mutableStateOf(initial.enabled) }
     var hour by remember(taskId) { mutableStateOf((initial.intervalMs / 3_600_000L).toInt()) }
     var minute by remember(taskId) { mutableStateOf(((initial.intervalMs % 3_600_000L) / 60_000L).toInt()) }
     var second by remember(taskId) { mutableStateOf(((initial.intervalMs % 60_000L) / 1000L).toInt()) }
@@ -174,6 +176,8 @@ fun TaskDetailScreen(taskId: String, onBack: () -> Unit) {
         id = initial.id,
         name = name.trim().ifBlank { "任务" },
         command = command.trim(),
+        trigger = initial.trigger,
+        enabled = enabled,
         intervalMs = ms,
         alarmMode = alarmMode,
         createdAt = initial.createdAt
@@ -248,25 +252,51 @@ fun TaskDetailScreen(taskId: String, onBack: () -> Unit) {
                 singleLine = true
             )
 
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                AlarmMode.values().forEachIndexed { index, mode ->
-                    SegmentedButton(
-                        selected = alarmMode == mode,
-                        onClick = {
-                            alarmMode = mode
-                            val updated = buildTask(initial.intervalMs)
-                            TaskStore.save(context, updated)
-                            AlarmScheduler.schedule(context, updated)
-                            nextTrigger = AlarmScheduler.getNextTriggerWall(context, taskId)
-                            lastLog = ExecutionLog.readLastTask(context, taskId)
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = AlarmMode.values().size
-                        )
-                    ) {
-                        Text(alarmModeLabel(mode))
+            Text(
+                "触发方式：${triggerTypeLabel(initial.trigger)}",
+                style = MaterialTheme.typography.titleSmall
+            )
+
+            if (initial.trigger == TriggerType.SCHEDULE) {
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    AlarmMode.values().forEachIndexed { index, mode ->
+                        SegmentedButton(
+                            selected = alarmMode == mode,
+                            onClick = {
+                                alarmMode = mode
+                                val updated = buildTask(initial.intervalMs)
+                                TaskStore.save(context, updated)
+                                AlarmScheduler.schedule(context, updated)
+                                nextTrigger = AlarmScheduler.getNextTriggerWall(context, taskId)
+                                lastLog = ExecutionLog.readLastTask(context, taskId)
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = AlarmMode.values().size
+                            )
+                        ) {
+                            Text(alarmModeLabel(mode))
+                        }
                     }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "启用此任务",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = enabled,
+                        onCheckedChange = { checked ->
+                            enabled = checked
+                            TaskStore.save(context, buildTask(initial.intervalMs))
+                            lastLog = ExecutionLog.readLastTask(context, taskId)
+                        }
+                    )
                 }
             }
 
@@ -279,35 +309,37 @@ fun TaskDetailScreen(taskId: String, onBack: () -> Unit) {
                 maxLines = 4
             )
 
-            Text("间隔时间", style = MaterialTheme.typography.titleSmall)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                NumberField(
-                    value = hour,
-                    onValueChange = { hour = it },
-                    label = "时",
-                    modifier = Modifier.weight(1f),
-                    max = 1000000000
-                )
-                NumberField(
-                    value = minute,
-                    onValueChange = { minute = it },
-                    label = "分",
-                    modifier = Modifier.weight(1f),
-                    max = 59
-                )
-                NumberField(
-                    value = second,
-                    onValueChange = { second = it },
-                    label = "秒",
-                    modifier = Modifier.weight(1f),
-                    max = 59
-                )
-            }
+            if (initial.trigger == TriggerType.SCHEDULE) {
+                Text("间隔时间", style = MaterialTheme.typography.titleSmall)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    NumberField(
+                        value = hour,
+                        onValueChange = { hour = it },
+                        label = "时",
+                        modifier = Modifier.weight(1f),
+                        max = 1000000000
+                    )
+                    NumberField(
+                        value = minute,
+                        onValueChange = { minute = it },
+                        label = "分",
+                        modifier = Modifier.weight(1f),
+                        max = 59
+                    )
+                    NumberField(
+                        value = second,
+                        onValueChange = { second = it },
+                        label = "秒",
+                        modifier = Modifier.weight(1f),
+                        max = 59
+                    )
+                }
 
-            Text("下次执行：${formatTime(nextTrigger)}")
+                Text("下次执行：${formatTime(nextTrigger)}")
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = { save() }) { Text("保存并应用") }
@@ -395,6 +427,14 @@ internal fun alarmModeLabel(mode: AlarmMode): String = when (mode) {
     AlarmMode.INEXACT -> "非精确"
     AlarmMode.EXACT -> "精确"
     AlarmMode.ALARM_CLOCK -> "闹钟"
+}
+
+internal fun triggerTypeLabel(type: TriggerType): String = when (type) {
+    TriggerType.SCHEDULE -> "定时"
+    TriggerType.BOOT -> "开机"
+    TriggerType.SHUTDOWN -> "关机"
+    TriggerType.UNLOCK -> "解锁"
+    TriggerType.SCREEN_OFF -> "关屏"
 }
 
 /** 数字输入框：输入即生效；删空可显示为空，失焦或回车时空值自动填 0；只允许数字，越界自动钳制到 [min, max]。 */

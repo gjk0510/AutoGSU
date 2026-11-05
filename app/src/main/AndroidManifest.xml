@@ -36,13 +36,40 @@
             android:name=".CommandReceiver"
             android:exported="false" />
 
-        <!-- 开机完成 / 快速开机广播，用于恢复定时任务 -->
+        <!-- 开机完成 / 快速开机广播，用于恢复定时任务并执行开机类任务 -->
         <receiver
             android:name=".BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 关机广播：尽力而为，多数机型收不到 -->
+        <receiver
+            android:name=".ShutdownReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_SHUTDOWN" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 解锁广播（解锁进入桌面） -->
+        <receiver
+            android:name=".UserPresentReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.USER_PRESENT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 关屏广播 -->
+        <receiver
+            android:name=".ScreenOffReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SCREEN_OFF" />
             </intent-filter>
         </receiver>
     </application>

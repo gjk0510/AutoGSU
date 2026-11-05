@@ -37,6 +37,13 @@ object AlarmScheduler {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pi = pendingIntent(context, task.id)
 
+        // 事件型任务（开机/关机/解锁/关屏）不参与闹钟调度。
+        if (task.trigger != TriggerType.SCHEDULE) {
+            alarmManager.cancel(pi)
+            setNextTriggerWall(context, task.id, 0L)
+            return
+        }
+
         if (task.alarmMode == AlarmMode.OFF) {
             alarmManager.cancel(pi)
             setNextTriggerWall(context, task.id, 0L)
@@ -105,9 +112,11 @@ object AlarmScheduler {
         ExecutionLog.appendTask(context, taskId, "已取消闹钟")
     }
 
-    /** 为所有任务重新注册闹钟（用于开机后恢复）。 */
+    /** 为所有定时任务重新注册闹钟（用于开机后恢复）。 */
     fun scheduleAll(context: Context) {
-        TaskStore.getAll(context).forEach { schedule(context, it) }
+        TaskStore.getAll(context)
+            .filter { it.trigger == TriggerType.SCHEDULE }
+            .forEach { schedule(context, it) }
     }
 
     /**
@@ -116,6 +125,7 @@ object AlarmScheduler {
      */
     fun ensureScheduled(context: Context) {
         TaskStore.getAll(context).forEach { task ->
+            if (task.trigger != TriggerType.SCHEDULE) return@forEach
             if (task.alarmMode == AlarmMode.OFF) return@forEach
             val nextWall = getNextTriggerWall(context, task.id)
             if (nextWall == 0L || nextWall <= System.currentTimeMillis()) {

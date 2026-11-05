@@ -5,30 +5,64 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/** 单个定时任务（主页上的一张卡片）。 */
+/** 触发方式：决定一张卡片在什么事件下执行命令。 */
+enum class TriggerType {
+    /** 定时：按间隔重复执行。 */
+    SCHEDULE,
+    /** 开机：每次开机后执行一次。 */
+    BOOT,
+    /** 关机：尽力而为（多数机型收不到 ACTION_SHUTDOWN）。 */
+    SHUTDOWN,
+    /** 解锁：解锁进入桌面后执行一次（ACTION_USER_PRESENT）。 */
+    UNLOCK,
+    /** 关屏：屏幕关闭时执行一次（ACTION_SCREEN_OFF）。 */
+    SCREEN_OFF;
+
+    companion object {
+        fun fromName(name: String?): TriggerType =
+            values().firstOrNull { it.name == name } ?: SCHEDULE
+    }
+}
+
+/** 单个任务（主页上的一张卡片）。 */
 data class Task(
     val id: String,
     val name: String,
     val command: String,
+    val trigger: TriggerType,
+    /** 统一开关：事件型任务以此控制是否执行；定时任务仍由 alarmMode 控制。 */
+    val enabled: Boolean,
     val intervalMs: Long,
     val alarmMode: AlarmMode,
     val createdAt: Long
 ) {
     companion object {
-        /** 新建一个未调度的任务卡片。 */
-        fun new(): Task = Task(
+        /** 新建一个未调度的任务卡片；触发方式决定默认名称与初始开关。 */
+        fun new(trigger: TriggerType = TriggerType.SCHEDULE): Task = Task(
             id = UUID.randomUUID().toString(),
-            name = "新任务",
+            name = defaultName(trigger),
             command = Settings.DEFAULT_COMMAND,
+            trigger = trigger,
+            enabled = true,
             intervalMs = Settings.DEFAULT_INTERVAL_MS,
-            alarmMode = AlarmMode.OFF,
+            alarmMode = if (trigger == TriggerType.SCHEDULE) AlarmMode.OFF else AlarmMode.INEXACT,
             createdAt = System.currentTimeMillis()
         )
+
+        private fun defaultName(trigger: TriggerType): String = when (trigger) {
+            TriggerType.SCHEDULE -> "定时任务"
+            TriggerType.BOOT -> "开机任务"
+            TriggerType.SHUTDOWN -> "关机任务"
+            TriggerType.UNLOCK -> "解锁任务"
+            TriggerType.SCREEN_OFF -> "关屏任务"
+        }
 
         fun fromJson(o: JSONObject): Task = Task(
             id = o.getString("id"),
             name = o.optString("name", "任务"),
             command = o.optString("command", Settings.DEFAULT_COMMAND),
+            trigger = TriggerType.fromName(o.optString("trigger")),
+            enabled = o.optBoolean("enabled", true),
             intervalMs = o.optLong("interval_ms", Settings.DEFAULT_INTERVAL_MS),
             alarmMode = AlarmMode.fromName(o.optString("alarm_mode")),
             createdAt = o.optLong("created_at", System.currentTimeMillis())
@@ -39,6 +73,8 @@ data class Task(
         put("id", id)
         put("name", name)
         put("command", command)
+        put("trigger", trigger.name)
+        put("enabled", enabled)
         put("interval_ms", intervalMs)
         put("alarm_mode", alarmMode.name)
         put("created_at", createdAt)
@@ -61,6 +97,8 @@ object TaskStore {
                     id = UUID.randomUUID().toString(),
                     name = "默认任务",
                     command = Settings.getCommand(context),
+                    trigger = TriggerType.SCHEDULE,
+                    enabled = true,
                     intervalMs = Settings.getIntervalMs(context),
                     alarmMode = Settings.getAlarmMode(context),
                     createdAt = System.currentTimeMillis()
