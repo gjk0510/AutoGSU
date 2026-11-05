@@ -2,6 +2,14 @@ package com.gjk0510.autosu
 
 import android.content.Context
 
+/** 解锁/关屏事件的监听方式：前台服务常驻通知 或 LSPosed Hook（无常驻进程）。 */
+enum class EventMode {
+    /** 前台服务 + 动态注册广播，需常驻通知。 */
+    NOTIFICATION,
+    /** Xposed hook 系统进程，事件时显式广播拉起本应用，无常驻通知。 */
+    LSP
+}
+
 /** 闹钟模式：关闭 / 三种闹钟类型（非精确 / 精确 / 闹钟）。 */
 enum class AlarmMode {
     OFF,
@@ -25,6 +33,7 @@ object Settings {
     private const val KEY_INTERVAL_MS = "interval_ms"
     private const val KEY_ALARM_MODE = "alarm_mode"
     private const val KEY_ENABLED = "enabled" // 旧版开关，仅用于读取迁移
+    private const val KEY_EVENT_MODE = "event_mode"
 
     /** 默认命令（占位），用户可在 App 内自行填写。 */
     const val DEFAULT_COMMAND = "echo AutoSU_$(date +%s)"
@@ -50,6 +59,17 @@ object Settings {
         if (name != null) return AlarmMode.fromName(name)
         // 旧版 boolean 开关迁移：关闭 → OFF，否则默认非精确。
         return if (p.getBoolean(KEY_ENABLED, true)) AlarmMode.INEXACT else AlarmMode.OFF
+    }
+
+    /** 解锁/关屏监听方式，默认前台服务常驻通知（无需 LSPosed 即可工作）。 */
+    fun getEventMode(context: Context): EventMode =
+        when (prefs(context).getString(KEY_EVENT_MODE, EventMode.NOTIFICATION.name)) {
+            EventMode.LSP.name -> EventMode.LSP
+            else -> EventMode.NOTIFICATION
+        }
+
+    fun setEventMode(context: Context, mode: EventMode) {
+        prefs(context).edit().putString(KEY_EVENT_MODE, mode.name).apply()
     }
 
     /** 是否保存过旧版单命令配置（决定是否需要迁移）。 */

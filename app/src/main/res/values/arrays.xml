@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- LSPosed 推荐作用域：系统框架（android，灭屏 hook）+ 系统界面（SystemUI，解锁 hook） -->
+    <string-array name="xposed_scope">
+        <item>android</item>
+        <item>com.android.systemui</item>
+    </string-array>
+</resources>

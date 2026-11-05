@@ -18,8 +18,8 @@ android {
         applicationId = "com.gjk0510.autosu"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "2.0"
+        versionCode = 5
+        versionName = "2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -53,6 +53,8 @@ android {
 }
 
 dependencies {
+    // Xposed API（仅编译期，运行时由 LSPosed 提供；api.xposed.info 不在公共 Maven 仓库，用本地 jar）
+    compileOnly(files("libs/api-82.jar"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

@@ -84,11 +84,12 @@ data class Task(
 /** 任务的持久化存储（JSON 存入 SharedPreferences）。 */
 object TaskStore {
     private const val KEY_TASKS = "tasks_v1"
+    private const val KEY_CORRUPT_BACKUP = "tasks_v1_corrupt_backup"
 
     fun getAll(context: Context): List<Task> {
         val raw = prefs(context).getString(KEY_TASKS, null)
         if (raw != null) {
-            return parse(raw)
+            return parse(raw, context)
         }
         // 首次升级：旧版只有一条命令，迁移为一个默认任务；全新安装则从空列表开始。
         val initial = if (Settings.hasLegacyConfig(context)) {
@@ -125,10 +126,14 @@ object TaskStore {
         write(context, getAll(context).filter { it.id != id })
     }
 
-    private fun parse(raw: String): List<Task> = try {
+    private fun parse(raw: String, context: Context? = null): List<Task> = try {
         val arr = JSONArray(raw)
         (0 until arr.length()).map { Task.fromJson(arr.getJSONObject(it)) }
     } catch (e: Exception) {
+        // 解析失败时不静默丢弃：原始串留底，便于排查“卡片莫名消失”
+        if (context != null) {
+            prefs(context).edit().putString(KEY_CORRUPT_BACKUP, raw).apply()
+        }
         emptyList()
     }
 
