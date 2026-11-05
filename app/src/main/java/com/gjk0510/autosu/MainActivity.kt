@@ -72,6 +72,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AlarmScheduler.ensureScheduled(this)
+        // 按监听模式拉起/停止前台服务（LSP 模式下停止常驻通知）
+        EventForegroundService.ensure(this)
         enableEdgeToEdge()
         setContent {
             AutoSUTheme {

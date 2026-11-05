@@ -21,6 +21,8 @@ class BootReceiver : BroadcastReceiver() {
 
         // 先恢复所有定时任务的闹钟。
         AlarmScheduler.scheduleAll(context)
+        // 按监听模式恢复解锁/关屏监听（常驻通知模式下重启服务）
+        EventForegroundService.ensure(context)
 
         val bootTasks = TaskStore.getAll(context).filter {
             it.trigger == TriggerType.BOOT && it.enabled

@@ -24,8 +24,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -156,6 +158,10 @@ fun HomeScreen(onOpen: (String) -> Unit, onAdd: (TriggerType) -> Unit) {
                                     confirmTaskId = task.id
                                     confirmStage = 1
                                 }
+                            },
+                            onToggleEnabled = { checked ->
+                                TaskStore.save(context, task.copy(enabled = checked))
+                                tasks = TaskStore.getAll(context)
                             }
                         )
                     }
@@ -199,7 +205,8 @@ private fun TaskCard(
     lastLog: String,
     confirmStage: Int,
     onClick: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    onToggleEnabled: (Boolean) -> Unit
 ) {
 
     Card(
@@ -235,6 +242,10 @@ private fun TaskCard(
                         color = MaterialTheme.colorScheme.error
                     )
                 }
+                Switch(
+                    checked = task.enabled,
+                    onCheckedChange = onToggleEnabled
+                )
             }
 
             Text(
@@ -281,11 +292,44 @@ private fun TaskCard(
 
 @Composable
 private fun AboutDialog(onDismiss: () -> Unit, activity: android.content.Context) {
+    // 解锁/关屏监听模式：开 = LSP Hook（无常驻通知），关 = 前台服务（常驻通知）。
+    var lspMode by remember {
+        mutableStateOf(Settings.getEventMode(activity) == EventMode.LSP)
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("关于 AutoGSU") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("解锁/关屏监听", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            text = if (lspMode) "LSP Hook（无常驻通知）" else "前台服务（常驻通知）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = lspMode,
+                        onCheckedChange = { checked ->
+                            lspMode = checked
+                            Settings.setEventMode(
+                                activity,
+                                if (checked) EventMode.LSP else EventMode.NOTIFICATION
+                            )
+                            EventForegroundService.ensure(activity)
+                        }
+                    )
+                }
+                if (lspMode) {
+                    Text(
+                        text = "需在 LSPosed 中启用本模块，作用域勾选「Android 系统」和「系统界面」，重启手机（或重启系统界面）后生效。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                HorizontalDivider()
                 Text("有问题邮件联系作者：")
                 Text(
                     text = "gjk0510@hotmail.com",

@@ -9,6 +9,10 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- 精确闹钟（setExactAndAllowWhileIdle）：Android 12+ 需用户在系统设置授予「闹钟和提醒」 -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 常驻通知模式：前台服务动态注册解锁/关屏广播 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -19,6 +23,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.AutoSU">
+
+        <!-- 同时作为 LSPosed 模块：解锁/关屏 hook（免常驻通知）。作用域需勾选 Android 系统 + 系统界面 -->
+        <meta-data android:name="xposedmodule" android:value="true" />
+        <meta-data android:name="xposeddescription" android:value="AutoGSU：解锁/关屏事件 hook（免常驻通知）" />
+        <meta-data android:name="xposedminversion" android:value="93" />
+        <meta-data android:name="xposedscope" android:resource="@array/xposed_scope" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -55,23 +65,20 @@
             </intent-filter>
         </receiver>
 
-        <!-- 解锁广播（解锁进入桌面） -->
+        <!-- LSP 模式事件入口：由 system_server / SystemUI 显式广播拉起（仅 LSP 模式生效） -->
         <receiver
-            android:name=".UserPresentReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.USER_PRESENT" />
-            </intent-filter>
-        </receiver>
+            android:name=".LspEventReceiver"
+            android:exported="true" />
 
-        <!-- 关屏广播 -->
-        <receiver
-            android:name=".ScreenOffReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.SCREEN_OFF" />
-            </intent-filter>
-        </receiver>
+        <!-- 常驻通知模式：前台服务内动态注册解锁/关屏广播 -->
+        <service
+            android:name=".EventForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="解锁/关屏事件监听" />
+        </service>
     </application>
 
 </manifest>
